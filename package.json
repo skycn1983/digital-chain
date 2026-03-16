@@ -1,0 +1,27 @@
+{
+  "name": "digital-chain",
+  "version": "1.0.0",
+  "description": "Digital Chain - Blockchain for Binance Alpha",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node src/server.js",
+    "test": "node test/smoke-test.js",
+    "p2p": "node src/p2p/server.js"
+  },
+  "keywords": [
+    "blockchain",
+    "cryptocurrency",
+    "digital-chain",
+    "binance"
+  ],
+  "author": "小明 & User",
+  "license": "MIT",
+  "dependencies": {
+    "elliptic": "6.6.1",
+    "express": "5.2.1",
+    "ws": "8.19.0",
+    "uuid": "^9.0.0",
+    "lru-cache": "^10.0.0"
+  }
+}

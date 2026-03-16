@@ -1,0 +1,7 @@
+[
+  {
+    "address": "127.0.0.1:30001",
+    "nodeId": "local-seed-1",
+    "description": "Local seed node for development"
+  }
+]

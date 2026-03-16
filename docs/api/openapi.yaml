@@ -1,0 +1,517 @@
+openapi: 3.0.3
+info:
+  title: Digital Chain API
+  description: |
+    Digital Chain (数字链) - 为币安Alpha准备的最小可行区块链
+    
+    ## 基础信息
+    - **协议**: HTTP + WebSocket
+    - **端口**: 3000 (默认)
+    - **链ID**: 自定义 (可配置)
+    - **代币符号**: OCT
+    
+    ## 快速开始
+    1. 启动节点: `npm start`
+    2. 访问浏览器: http://localhost:3000
+    3. 查看 API: 本页面
+    
+    ## 注意
+    - 当前为演示版本，签名验证简化
+    - 生产环境需启用完整签名验证
+    - 无 P2P 网络层（单节点）
+  version: 1.0.0
+  contact:
+    name: OpenClaw AI Assistant
+    email: agent@openclaw.ai
+  license:
+    name: MIT
+
+servers:
+  - url: http://localhost:3000
+    description: 本地开发服务器
+
+paths:
+  /wallet/create:
+    post:
+      summary: 创建新钱包
+      description: 生成新的secp256k1密钥对和地址
+      tags:
+        - Wallet
+      responses:
+        '200':
+          description: 钱包创建成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  address:
+                    type: string
+                    description: 钱包地址 (RIPEMD160(SHA256(publicKey)))
+                    example: "0x4f056861698045145ee945f82d85dd0e55c9bea4"
+                  publicKey:
+                    type: string
+                    description: 公钥 (secp256k1 uncompressed, 65 bytes)
+                    example: "04a06f26ec20a868184dbec206b67c11db2bb496b806373ee2a69f1c54070742e0364f45995e01d6ac1b181083eb902e9d5a3622ec3e5bb4f4b633b872784e1a6e"
+                  privateKey:
+                    type: string
+                    description: 私钥 (hex格式) - ⚠️ 生产环境不应返回
+                    example: "e88284626afa86567987c860b43659463d5efefcb04336ab400c411fa271f359"
+                  message:
+                    type: string
+                    example: "Wallet created. Save private key securely!"
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /balance/{address}:
+    get:
+      summary: 查询余额
+      description: 获取指定地址的OCT余额
+      tags:
+        - Blockchain
+      parameters:
+        - name: address
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^0x[a-fA-F0-9]{40}$"
+          description: 钱包地址
+      responses:
+        '200':
+          description: 余额查询成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  address:
+                    type: string
+                  balance:
+                    type: integer
+                    description: 余额 (OCT)
+                    example: 150
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /nonce/{address}:
+    get:
+      summary: 查询Nonce
+      description: 获取地址的交易计数（用于防止重放攻击）
+      tags:
+        - Blockchain
+      parameters:
+        - name: address
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^0x[a-fA-F0-9]{40}$"
+      responses:
+        '200':
+          description: Nonce查询成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  address:
+                    type: string
+                  nonce:
+                    type: integer
+                    description: 该地址已发送的交易数量
+                    example: 3
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /transaction:
+    post:
+      summary: 创建交易
+      description: |
+        创建并签名交易，加入待处理池。
+        ⚠️ 当前演示模式跳过完整签名验证，生产环境需启用。
+      tags:
+        - Transaction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - from
+                - to
+                - amount
+              properties:
+                from:
+                  type: string
+                  description: 发送方地址
+                to:
+                  type: string
+                  description: 接收方地址
+                amount:
+                  type: integer
+                  description: 转账金额 (OCT)
+                  minimum: 1
+                gasPrice:
+                  type: integer
+                  description: Gas价格 (默认: 1)
+                  default: 1
+                gasLimit:
+                  type: integer
+                  description: Gas上限 (默认: 21000)
+                  default: 21000
+      responses:
+        '200':
+          description: 交易创建成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  hash:
+                    type: string
+                    description: 交易哈希 (SHA256(交易数据))
+                  from:
+                    type: string
+                  to:
+                    type: string
+                  amount:
+                    type: integer
+                  nonce:
+                    type: integer
+                    description: 交易序号
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /mine:
+    post:
+      summary: 挖矿
+      description: |
+        执行PoW挖矿，打包待处理交易和Coinbase奖励，生成新区块。
+        难度自动调整（每10块检查一次）。
+      tags:
+        - Mining
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - minerAddress
+              properties:
+                minerAddress:
+                  type: string
+                  description: 矿工地址（接收出块奖励）
+      responses:
+        '200':
+          description: 挖矿成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  block:
+                    type: object
+                    properties:
+                      index:
+                        type: integer
+                      hash:
+                        type: string
+                      transactions:
+                        type: integer
+                        description: 区块内交易数量
+                      timestamp:
+                        type: integer
+                  stats:
+                    type: object
+                    properties:
+                      blocks:
+                        type: integer
+                        description: 当前链高度
+                      pending:
+                        type: integer
+                        description: 待处理交易数
+                      difficulty:
+                        type: integer
+                        description: 当前难度
+                      reward:
+                        type: integer
+                        description: 出块奖励 (OCT)
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /chain:
+    get:
+      summary: 获取链信息
+      description: 返回完整链状态和最新区块摘要
+      tags:
+        - Blockchain
+      responses:
+        '200':
+          description: 链信息
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  stats:
+                    $ref: '#/components/schemas/ChainStats'
+                  latestBlock:
+                    type: object
+                    description: 最新区块摘要
+                    properties:
+                      index:
+                        type: integer
+                      hash:
+                        type: string
+                      transactions:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            hash:
+                              type: string
+                            from:
+                              type: string
+                            to:
+                              type: string
+                            amount:
+                              type: integer
+
+  /block/{index}:
+    get:
+      summary: 获取指定区块
+      description: 根据索引查询完整区块信息
+      tags:
+        - Blockchain
+      parameters:
+        - name: index
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 0
+      responses:
+        '200':
+          description: 区块详情
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Block'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /pending:
+    get:
+      summary: 获取待处理交易
+      description: 查询交易池中的所有待确认交易
+      tags:
+        - Transaction
+      responses:
+        '200':
+          description: 待处理交易列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count:
+                    type: integer
+                  transactions:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        hash:
+                          type: string
+                        from:
+                          type: string
+                        to:
+                          type: string
+                        amount:
+                          type: integer
+                        nonce:
+                          type: integer
+
+  /health:
+    get:
+      summary: 健康检查
+      description: 节点健康状态检查端点
+      tags:
+        - Utility
+      responses:
+        '200':
+          description: 节点健康
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "ok"
+                  timestamp:
+                    type: integer
+                  chainLength:
+                    type: integer
+                  pendingTx:
+                    type: integer
+
+components:
+  schemas:
+    Block:
+      type: object
+      properties:
+        index:
+          type: integer
+        previousHash:
+          type: string
+        transactions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Transaction'
+        timestamp:
+          type: integer
+        difficulty:
+          type: integer
+        nonce:
+          type: integer
+        hash:
+          type: string
+        merkleRoot:
+          type: string
+
+    Transaction:
+      type: object
+      properties:
+        from:
+          type: string
+        to:
+          type: string
+        amount:
+          type: integer
+        nonce:
+          type: integer
+        gasPrice:
+          type: integer
+        gasLimit:
+          type: integer
+        data:
+          type: string
+        timestamp:
+          type: integer
+        signature:
+          type: string
+          nullable: true
+        hash:
+          type: string
+
+    ChainStats:
+      type: object
+      properties:
+        blocks:
+          type: integer
+        pending:
+          type: integer
+        difficulty:
+          type: integer
+        reward:
+          type: integer
+        latestHash:
+          type: string
+        valid:
+          type: boolean
+
+  responses:
+    BadRequest:
+      description: 请求参数错误
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+    NotFound:
+      description: 资源未找到
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+    ServerError:
+      description: 服务器内部错误
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+
+# WebSocket Events (Non-OpenAPI)
+
+## Event: new_transaction
+广播时机：交易被加入待处理池时
+
+```json
+{
+  "type": "new_transaction",
+  "data": {
+    "hash": "0x...",
+    "from": "0x...",
+    "to": "0x...",
+    "amount": 100,
+    "nonce": 3,
+    "timestamp": 1234567890
+  }
+}
+```
+
+## Event: new_block
+广播时机：新区块被挖出时
+
+```json
+{
+  "type": "new_block",
+  "data": {
+    "index": 10,
+    "hash": "0x...",
+    "transactions": [ ... ],
+    "timestamp": 1234567890,
+    "miner": "0x...",
+    "reward": 50
+  }
+}
+```
+
+## Event: chain_update
+广播时机：链状态更新时（连接建立 + 每个新区块）
+
+```json
+{
+  "type": "chain_update",
+  "data": {
+    "stats": { ... },
+    "latestBlock": { ... }
+  }
+}
+```
