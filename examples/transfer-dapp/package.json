@@ -1,0 +1,24 @@
+{
+  "name": "digital-chain-transfer-dapp",
+  "version": "1.0.0",
+  "description": "Simple token transfer DApp for Digital Chain",
+  "main": "index.html",
+  "scripts": {
+    "start": "npx http-server -p 8080 -o",
+    "dev": "npx http-server -p 8080 -c-1"
+  },
+  "dependencies": {
+    "@digital-chain/js": "^1.0.0"
+  },
+  "devDependencies": {
+    "http-server": "^14.1.1"
+  },
+  "keywords": [
+    "digital-chain",
+    "blockchain",
+    "dapp",
+    "token-transfer"
+  ],
+  "author": "小明",
+  "license": "MIT"
+}

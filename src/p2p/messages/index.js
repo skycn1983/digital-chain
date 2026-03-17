@@ -134,6 +134,14 @@ function handleBlocks(p2pServer, peer, payload, blockchain) {
         // 交给 fork choice 处理
         const result = p2pServer.forkChoice.addBlock(block);
 
+        // 检测是否需要完整链同步（新节点场景）
+        if (result.needsFullSync) {
+          logger.info(`Need full chain sync from ${peer.id}, requesting from height 0`);
+          // 请求从高度0开始的完整链（包括创世块）
+          peer.send('get_blocks', { fromHeight: 0, limit: 1000 });
+          break; // 停止处理当前批次，等待完整链
+        }
+
         if (!result.accepted) {
           // 停止处理后续区块
           break;
@@ -185,9 +193,9 @@ function handleTxBroadcast(p2pServer, peer, payload, blockchain) {
       throw new Error('Transaction missing publicKey for signature verification');
     }
 
-    // 验证公钥是否匹配 from 地址
-    const crypto = require('../../crypto');
-    const derivedAddress = '0x' + crypto.createHash('ripemd160')
+    // 验证公钥是否匹配 from 地址（使用 Node.js crypto）
+    const nodeCrypto = require('crypto');
+    const derivedAddress = '0x' + nodeCrypto.createHash('ripemd160')
       .update(Buffer.from(tx.publicKey, 'hex')).digest('hex');
     if (derivedAddress !== tx.from) {
       throw new Error('PublicKey does not match from address');
@@ -292,6 +300,7 @@ function handleNewBlock(p2pServer, peer, payload, blockchain) {
 
   } catch (e) {
     logger.error(`Failed to process new block from ${peer.id}:`, e.message);
+    logger.error(e.stack);
   }
 }
 

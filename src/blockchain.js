@@ -4,12 +4,12 @@ const fs = require('fs');
 const path = require('path');
 
 class Blockchain {
-  constructor(difficulty = 2, blockReward = 50) {
+  constructor(difficulty = 2, blockReward = 50, dataDir = null) {
     this.chain = [];
     this.pendingTransactions = [];
     this.difficulty = difficulty;
     this.blockReward = blockReward;
-    this.dataDir = path.join(__dirname, '..', 'data');
+    this.dataDir = dataDir || path.join(__dirname, '..', 'data');
     this.chainFile = path.join(this.dataDir, 'chain.json');
 
     if (!fs.existsSync(this.dataDir)) {

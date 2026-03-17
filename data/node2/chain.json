@@ -1,0 +1,17 @@
+{
+  "chain": [
+    {
+      "index": 0,
+      "previousHash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "transactions": [],
+      "timestamp": 1773700161804,
+      "difficulty": 2,
+      "nonce": 144,
+      "hash": "00b2c496083c52843a4f45eb24b7e85e8788fa14fa89f575430955d136e83ff8",
+      "merkleRoot": "2e1cfa82b035c26cbbbdae632cea070514eb8b773f616aaeaf668e2f0be8f10d"
+    }
+  ],
+  "pending": [],
+  "difficulty": 2,
+  "blockReward": 50
+}

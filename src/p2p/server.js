@@ -172,6 +172,13 @@ class P2PServer {
         return;
       }
 
+      // 检查是否是自己（防止自连接）
+      if (handshake.nodeId === this._getLocalNodeId()) {
+        logger.info(`Ignoring self-connection from ${remoteAddress}`);
+        socket.destroy();
+        return;
+      }
+
       // 检查是否已存在同节点（不同地址）
       if (this.peers.has(handshake.nodeId)) {
         const existing = this.peers.get(handshake.nodeId);
@@ -215,10 +222,18 @@ class P2PServer {
 
       logger.info(`Handshake completed with ${peer.id} (${remoteAddress}), height=${peer.chainHeight}`);
 
-      // 如果对方链更高，请求同步
-      if (peer.chainHeight > this.blockchain.chain.length) {
+      // 如果对方链更高或相等（可能创世块不同），请求同步
+      if (peer.chainHeight >= this.blockchain.chain.length) {
         this._requestSync(peer);
       }
+
+      // 延迟 1 秒再次检查并同步（确保 handshake 数据已稳定）
+      setTimeout(() => {
+        if (peer.connected && peer.chainHeight > this.blockchain.chain.length) {
+          logger.debug(`Post-handshake sync check: ${peer.id} height ${peer.chainHeight} > local ${this.blockchain.chain.length}`);
+          this._requestSync(peer);
+        }
+      }, 1000);
 
       // 发送 peers 列表
       this._sendPeerList(peer);
@@ -358,6 +373,13 @@ class P2PServer {
 
         const handshake = new Handshake(msg.payload);
 
+        // 检查是否是自己（防止自连接）
+        if (handshake.nodeId === this._getLocalNodeId()) {
+          logger.info(`Ignoring self-connection to ${address}`);
+          socket.destroy();
+          return;
+        }
+
         peer = new Peer(socket, address, {
           ...handshake.data,
           _outbound: true
@@ -379,8 +401,8 @@ class P2PServer {
           this.onPeerConnected(peer);
         }
 
-        // 同步检查
-        if (peer.chainHeight > this.blockchain.chain.length) {
+        // 同步检查 - 只要对方链不矮于本地，就请求同步（覆盖创世块差异）
+        if (peer.chainHeight >= this.blockchain.chain.length) {
           this._requestSync(peer);
         }
 
@@ -512,7 +534,10 @@ class P2PServer {
    */
   _requestSync(peer) {
     const localHeight = this.blockchain.chain.length;
-    const fromHeight = localHeight + 1;
+    
+    // 如果本地只有创世块（高度1），请求完整链（从高度0开始）
+    // 这样新节点可以从创世块完全同步
+    const fromHeight = (localHeight === 1) ? 0 : localHeight + 1;
     const limit = 100;
 
     peer.send('get_blocks', {
@@ -520,7 +545,7 @@ class P2PServer {
       limit
     });
 
-    logger.debug(`Requesting sync from ${peer.id}: from=${fromHeight}, limit=${limit}`);
+    logger.debug(`Requesting sync from ${peer.id}: from=${fromHeight}, limit=${limit} (localHeight=${localHeight})`);
   }
 
   /**
@@ -657,6 +682,12 @@ class P2PServer {
               peer.disconnect();
             }
           }, this.pingTimeout);
+        }
+
+        // 同步检查：如果 peer 链高度 > 本地高度，请求增量同步
+        if (peer.chainHeight > this.blockchain.chain.length) {
+          logger.debug(`Peer ${peer.id} has higher height (${peer.chainHeight} vs ${this.blockchain.chain.length}), requesting sync`);
+          this._requestSync(peer);
         }
       }
     }, 5000); // 每 5 秒检查一次

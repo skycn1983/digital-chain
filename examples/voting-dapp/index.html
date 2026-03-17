@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Digital Chain - DAO 投票</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>🗳️ Digital Chain DAO</h1>
+      <p class="subtitle">去中心化自治组织投票平台</p>
+      <div class="connection-status">
+        <span id="status-dot" class="dot disconnected"></span>
+        <span id="status-text">未连接</span>
+      </div>
+    </header>
+
+    <main>
+      <!-- 钱包面板 -->
+      <section class="panel wallet-panel">
+        <h2>👛 我的钱包</h2>
+        <div class="wallet-info" id="wallet-info" style="display: none;">
+          <div class="info-row">
+            <label>地址:</label>
+            <code id="wallet-address" class="address"></code>
+          </div>
+          <div class="info-row">
+            <label>投票权:</label>
+            <span id="voting-power" class="balance">0</span>
+            <span class="unit">OCT</span>
+          </div>
+        </div>
+        <div class="wallet-actions" id="wallet-actions">
+          <button class="btn primary" onclick="createWallet()">🆕 创建钱包</button>
+          <button class="btn" onclick="importWallet()">📥 导入</button>
+        </div>
+        <div class="private-key-warning" id="private-key-warning" style="display: none;">
+          ⚠️ 保存私钥！
+          <div class="private-key-box">
+            <code id="private-key"></code>
+            <button class="btn-small" onclick="copyPrivateKey()">📋</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- 创建提案面板 -->
+      <section class="panel create-proposal-panel" id="create-panel" style="display: none;">
+        <h2>📝 创建提案</h2>
+        <form id="proposal-form" onsubmit="createProposal(event)">
+          <div class="form-group">
+            <label for="proposal-title">提案标题</label>
+            <input type="text" id="proposal-title" placeholder="简要描述提案内容..." required>
+          </div>
+          <div class="form-group">
+            <label for="proposal-desc">详细描述</label>
+            <textarea id="proposal-desc" rows="4" placeholder="提案的详细说明、理由、预期影响..."></textarea>
+          </div>
+          <div class="form-group">
+            <label for="proposal-duration">投票时长（区块数）</label>
+            <input type="number" id="proposal-duration" value="100" min="10" required>
+            <small>当前区块速度约2秒/块，100块≈200秒</small>
+          </div>
+          <div class="form-group">
+            <label>投票选项</label>
+            <div class="vote-options">
+              <label><input type="radio" name="options" value="yes" checked> 支持</label>
+              <label><input type="radio" name="options" value="no"> 反对</label>
+              <label><input type="radio" name="options" value="abstain"> 弃权</label>
+            </div>
+            <small>注意：投票时选择选项，创建提案不涉及投票</small>
+          </div>
+          <button type="submit" class="btn primary">📤 发布提案</button>
+        </form>
+        <div id="proposal-result" class="tx-result"></div>
+      </section>
+
+      <!-- 提案列表 -->
+      <section class="panel proposals-panel">
+        <h2>📋 提案列表</h2>
+        <div class="proposals-count" id="proposals-count">0 个提案</div>
+        <div class="proposal-list" id="proposal-list"></div>
+      </section>
+
+      <!-- 投票面板 -->
+      <section class="panel vote-panel" id="vote-panel" style="display: none;">
+        <h2>🗳️ 投票</h2>
+        <div class="proposal-detail" id="proposal-detail"></div>
+        <form id="vote-form" onsubmit="submitVote(event)">
+          <input type="hidden" id="proposal-id">
+          <div class="form-group">
+            <label>您的选择</label>
+            <div class="vote-options">
+              <label><input type="radio" name="vote" value="yes" required> ✅ 支持</label>
+              <label><input type="radio" name="vote" value="no"> ❌ 反对</label>
+              <label><input type="radio" name="vote" value="abstain"> ⚪ 弃权</label>
+            </div>
+          </div>
+          <button type="submit" class="btn primary">提交投票</button>
+          <button type="button" class="btn" onclick="closeVotePanel()">取消</button>
+        </form>
+        <div id="vote-result" class="tx-result"></div>
+      </section>
+    </main>
+
+    <footer>
+      <p>Digital Chain DAO v1.0 | 基于链上治理</p>
+    </footer>
+  </div>
+
+  <!-- 钱包导入模态框 -->
+  <div id="import-modal" class="modal" style="display: none;">
+    <div class="modal-content">
+      <span class="close" onclick="closeImportModal()">&times;</span>
+      <h2>📥 导入钱包</h2>
+      <textarea id="import-private-key" placeholder="请输入私钥（64位十六进制）"></textarea>
+      <button class="btn primary" onclick="confirmImport()">导入</button>
+    </div>
+  </div>
+
+  <!-- Toast 通知 -->
+  <div id="toast" class="toast"></div>
+
+  <script src="js/app.js"></script>
+</body>
+</html>

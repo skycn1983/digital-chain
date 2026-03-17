@@ -7,8 +7,11 @@ const { Wallet } = require('./crypto');
 const { Transaction } = require('./transaction');
 const { P2PServer } = require('./p2p/server');
 
+// 支持自定义数据目录
+const dataDir = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
+
 const app = express();
-const blockchain = new Blockchain();
+const blockchain = new Blockchain(2, 50, dataDir);
 
 // Middleware
 app.use(express.json());
@@ -26,12 +29,16 @@ app.use((req, res, next) => {
 app.post('/wallet/create', (req, res) => {
   try {
     const wallet = new Wallet();
+    const isProduction = process.env.NODE_ENV === 'production';
     res.json({
       success: true,
       address: wallet.address,
       publicKey: wallet.publicKey,
-      privateKey: wallet.privateKey, // In production, NEVER return this!
-      message: 'Wallet created. Save private key securely!'
+      // 生产环境不返回私钥
+      ...(isProduction ? {} : { privateKey: wallet.privateKey }),
+      message: isProduction
+        ? 'Wallet created. Private key is not returned in production mode.'
+        : 'Wallet created. Save private key securely!'
     });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -61,10 +68,23 @@ app.get('/nonce/:address', (req, res) => {
 // Create transaction
 app.post('/transaction', (req, res) => {
   try {
-    const { from, to, amount, gasPrice = 1, gasLimit = 21000, privateKey } = req.body;
+    const { from, to, amount, gasPrice = 1, gasLimit = 21000, privateKey, nonce: explicitNonce } = req.body;
 
     if (!from || !to || !amount) {
       return res.status(400).json({ error: 'Missing required fields: from, to, amount' });
+    }
+
+    // 确定 nonce：如果显式提供则使用，否则自动获取
+    let nonce;
+    if (explicitNonce !== undefined) {
+      nonce = explicitNonce;
+      // 验证 nonce 是否重复
+      const existing = blockchain.pendingTransactions.find(t => t.from === from && t.nonce === nonce);
+      if (existing) {
+        return res.status(400).json({ error: `Duplicate nonce ${nonce} for sender ${from}` });
+      }
+    } else {
+      nonce = blockchain.getNonce(from);
     }
 
     // If privateKey is provided, derive publicKey and sign properly
@@ -74,13 +94,12 @@ app.post('/transaction', (req, res) => {
       if (wallet.address !== from) {
         return res.status(400).json({ error: 'Private key does not match from address' });
       }
-      tx = new Transaction(from, to, amount, blockchain.getNonce(from), gasPrice, gasLimit);
+      tx = new Transaction(from, to, amount, nonce, gasPrice, gasLimit);
       tx.sign(wallet);
       // 附加公钥用于验证
       tx.publicKey = wallet.publicKey;
     } else {
       // Demo mode: skip private key verification
-      const nonce = blockchain.getNonce(from);
       tx = new Transaction(from, to, amount, nonce, gasPrice, gasLimit);
       tx.signature = 'demo_sig_' + Date.now(); // demo signature
       // 注意: demo 模式不包含 publicKey，P2P 网络将拒绝此交易
@@ -88,6 +107,11 @@ app.post('/transaction', (req, res) => {
 
     // Add to pending pool
     blockchain.addTransaction(tx);
+
+    // Broadcast to P2P network
+    if (typeof broadcastP2P === 'function') {
+      broadcastP2P('tx_broadcast', { transaction: tx.serialize() });
+    }
 
     res.json({
       success: true,
@@ -384,19 +408,8 @@ blockchain.addTransaction = function(tx) {
 const originalMineBlock = blockchain.mineBlock.bind(blockchain);
 blockchain.mineBlock = function(minerAddress) {
   const block = originalMineBlock(minerAddress);
-  broadcast('new_block', {
-    index: block.index,
-    hash: block.hash,
-    transactions: block.transactions.map(tx => ({
-      hash: tx.getHash(),
-      from: tx.from,
-      to: tx.to,
-      amount: tx.amount
-    })),
-    timestamp: block.timestamp,
-    miner: minerAddress,
-    reward: blockchain.blockReward
-  });
+  // 广播完整区块数据（使用 serialize）
+  broadcast('new_block', { block: block.serialize() });
   broadcastWS('chain_update', blockchain.getStats());
   return block;
 };

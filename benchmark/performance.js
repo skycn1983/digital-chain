@@ -6,13 +6,12 @@
  */
 
 const http = require('http');
-const { v4: uuidv4 } = require('uuid');
 
 const NODE_URL = process.env.NODE_URL || 'http://localhost:3000';
 const CONCURRENT_REQUESTS = parseInt(process.env.CONCURRENT) || 10;
 const TOTAL_TRANSACTIONS = parseInt(process.env.TOTAL_TX) || 100;
 
-// 简单 UUID 模拟（避免依赖 uuid 包）
+// 简单 UUID 生成
 function uuid() {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
     const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
@@ -86,6 +85,11 @@ async function benchmark() {
   const balanceRes = await request('GET', `/balance/${wallet.address}`);
   const balance = balanceRes.data.balance;
   console.log(`   Balance: ${balance} OCT`);
+
+  // 获取初始 nonce
+  const nonceRes = await request('GET', `/nonce/${wallet.address}`);
+  const initialNonce = nonceRes.data.nonce;
+  console.log(`   Initial nonce: ${initialNonce}`);
   console.log('');
 
   if (balance < TOTAL_TRANSACTIONS) {
@@ -96,34 +100,56 @@ async function benchmark() {
   // 2. 基准测试：发送交易
   console.log(`🏃 Running benchmark: ${TOTAL_TRANSACTIONS} transactions, ${CONCURRENT_REQUESTS} concurrent...`);
 
-  const txHashes = [];
   const latencies = [];
   let startTime, endTime;
 
   // 使用信号量控制并发
-  const semaphore = new Array(CONCURRENT_REQUESTS).fill(Promise.resolve());
+  let running = 0;
+  const queue = [];
 
-  async function runWithSemaphore(task) {
-    const queue = semaphore.shift();
-    const result = queue.then(() => task()).finally(() => {
-      semaphore.push(Promise.resolve());
+  function runWithSemaphore(task) {
+    return new Promise((resolve) => {
+      const runTask = async () => {
+        running++;
+        try {
+          const result = await task();
+          resolve(result);
+        } catch (err) {
+          resolve({ error: err, latency: 0 });
+        } finally {
+          running--;
+          if (queue.length > 0) {
+            queue.shift()();
+          }
+        }
+      };
+
+      if (running < CONCURRENT_REQUESTS) {
+        runTask();
+      } else {
+        queue.push(runTask);
+      }
     });
-    return result;
   }
 
-  // 创建一批交易
+  // 创建一批交易，每个使用独立的 nonce
   const tasks = [];
   for (let i = 0; i < TOTAL_TRANSACTIONS; i++) {
+    const nonce = initialNonce + i;
     tasks.push(runWithSemaphore(async () => {
+      const start = Date.now();
       const txBody = {
         from: wallet.address,
         to: '0x' + uuid().replace(/-/g, '').slice(0, 40),
         amount: 1,
         gasPrice: 1,
         gasLimit: 21000,
-        privateKey: wallet.privateKey
+        privateKey: wallet.privateKey,
+        nonce: nonce  // 显式指定 nonce
       };
-      return request('POST', '/transaction', txBody);
+      const res = await request('POST', '/transaction', txBody);
+      const latency = Date.now() - start;
+      return { ...res, latency };
     }));
   }
 
@@ -135,11 +161,12 @@ async function benchmark() {
   // 收集数据
   let success = 0, failed = 0;
   for (const res of results) {
-    latencies.push(res.latency);
-    if (res.status === 200 && res.data.success) {
+    if (res.latency) latencies.push(res.latency);
+    if (res.status === 200 && res.data && res.data.success) {
       success++;
     } else {
       failed++;
+      console.error(`   Failed tx: ${JSON.stringify(res).substring(0, 200)}`);
     }
   }
 
